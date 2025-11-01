@@ -1,333 +1,568 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Game of Life — WebGPU</title>
-  <style>
-    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans JP",sans-serif}
-    #root{display:flex;height:100%;gap:12px;padding:12px;box-sizing:border-box}
-    canvas{border:1px solid #222;image-rendering:pixelated}
-    .controls{width:320px}
-    button,input{display:block;margin:8px 0;padding:8px;width:100%}
-    label{font-size:13px;color:#ddd}
-    .small{font-size:12px}
-    body{background:#0b0b0b;color:#eee}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGPU Life Game (Optimized)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 1200px;
+            width: 100%;
+        }
+        h1 {
+            margin: 0 0 20px 0;
+            color: #333;
+            text-align: center;
+            font-size: 2em;
+        }
+        #canvas {
+            display: block;
+            margin: 0 auto 20px;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            cursor: crosshair;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: bold;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .info-item {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            padding: 15px;
+            border-radius: 10px;
+            color: white;
+            text-align: center;
+        }
+        .info-item strong {
+            display: block;
+            font-size: 1.5em;
+            margin-top: 5px;
+        }
+        .error {
+            background: #ff6b6b;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 15px;
+        }
+        input[type="range"] {
+            width: 200px;
+        }
+    </style>
 </head>
 <body>
-<div id="root">
-  <div>
-    <canvas id="canvas"></canvas>
-  </div>
-  <div class="controls">
-    <h3>Game of Life — WebGPU</h3>
-    <label>Grid width: <input id="width" type="number" value="1254"/></label>
-    <label>Grid height: <input id="height" type="number" value="706"/></label>
-    <button id="applySize">Apply Size</button>
+    <div class="container">
+        <h1>🧬 WebGPU Life Game (GPU-Optimized)</h1>
+        <div id="error" class="error"></div>
+        
+        <canvas id="canvas" width="1024" height="1024"></canvas>
+        
+        <div class="info">
+            <div class="info-item">
+                <div>グリッドサイズ</div>
+                <strong id="gridSize">-</strong>
+            </div>
+            <div class="info-item">
+                <div>世代</div>
+                <strong id="generation">0</strong>
+            </div>
+            <div class="info-item">
+                <div>FPS</div>
+                <strong id="fps">0</strong>
+            </div>
+            <div class="info-item">
+                <div>ステータス</div>
+                <strong id="status">準備中</strong>
+            </div>
+        </div>
 
-    <button id="start">Start</button>
-    <button id="step">Step</button>
-    <button id="random">Randomize</button>
-    <button id="clear">Clear</button>
+        <div class="slider-container">
+            <label for="speedSlider">速度:</label>
+            <input type="range" id="speedSlider" min="1" max="60" value="30">
+            <span id="speedValue">30</span> gen/sec
+        </div>
 
-    <label>Speed (ms per step): <input id="speed" type="range" min="1" max="200" value="30"/></label>
-    <div id="status" class="small">status: idle</div>
+        <div class="controls">
+            <button id="startBtn">開始</button>
+            <button id="stopBtn" disabled>停止</button>
+            <button id="stepBtn">1ステップ</button>
+            <button id="resetBtn">ランダム初期化</button>
+            <button id="clearBtn">クリア</button>
+            <button id="gliderBtn">グライダー配置</button>
+        </div>
+    </div>
 
-    <p class="small">Click canvas to toggle cells. Use Apply Size after changing resolution.</p>
-    <p class="small">Works on browsers with WebGPU (Chrome/Edge recent). If WebGPU unavailable, open about:flags or use a WebGPU-enabled build.</p>
-  </div>
-</div>
+    <script>
+        const GRID_SIZE = 2048; // 2048x2048 = 4,194,304 cells
+        const WORKGROUP_SIZE = 8;
 
-<script type="module">
-(async ()=>{
-  if (!('gpu' in navigator)){
-    alert('このブラウザは WebGPU をサポートしていません。Chrome/Edge の最新版をお試しください。');
-    return;
-  }
+        let device, context, computePipeline, renderPipeline;
+        let bindGroups, cellStateStorages, cellStateTextures;
+        let generation = 0;
+        let isRunning = false;
+        let animationId = null;
+        let lastFrameTime = 0;
+        let frameCount = 0;
+        let lastFpsUpdate = 0;
+        let targetFrameTime = 1000 / 30;
 
-  // DOM
-  const canvas = document.getElementById('canvas');
-  const startBtn = document.getElementById('start');
-  const stepBtn = document.getElementById('step');
-  const randomBtn = document.getElementById('random');
-  const clearBtn = document.getElementById('clear');
-  const speedRange = document.getElementById('speed');
-  const status = document.getElementById('status');
-  const widthInput = document.getElementById('width');
-  const heightInput = document.getElementById('height');
-  const applySize = document.getElementById('applySize');
+        const canvas = document.getElementById('canvas');
+        const errorDiv = document.getElementById('error');
 
-  let gridWidth = parseInt(widthInput.value,10);
-  let gridHeight = parseInt(heightInput.value,10);
+        // UI要素
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const stepBtn = document.getElementById('stepBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const gliderBtn = document.getElementById('gliderBtn');
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValue = document.getElementById('speedValue');
 
-  // WebGPU device
-  const adapter = await navigator.gpu.requestAdapter();
-  const device = await adapter.requestDevice();
-  const queue = device.queue;
+        speedSlider.addEventListener('input', (e) => {
+            const fps = parseInt(e.target.value);
+            speedValue.textContent = fps;
+            targetFrameTime = 1000 / fps;
+        });
 
-  // Shaders (WGSL)
-  const computeShaderWGSL = `
-struct Params { width : u32; height : u32; };
-@group(0) @binding(0) var inputTex : texture_2d<f32>;
-@group(0) @binding(1) var outputTex : texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(2) var<uniform> params : Params;
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
 
-@compute @workgroup_size(16,16)
-fn main(@builtin(global_invocation_id) gid : vec3<u32>){
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  let w = i32(params.width);
-  let h = i32(params.height);
-  if (x >= w || y >= h) { return; }
-  var count : i32 = 0;
-  for (var oy = -1; oy <= 1; oy = oy + 1) {
-    for (var ox = -1; ox <= 1; ox = ox + 1) {
-      if (ox == 0 && oy == 0) { continue; }
-      let nx = (x + ox + w) % w;
-      let ny = (y + oy + h) % h;
-      let c : f32 = textureLoad(inputTex, vec2<i32>(nx, ny), 0).r;
-      if (c > 0.5) { count = count + 1; }
-    }
-  }
-  let cur : f32 = textureLoad(inputTex, vec2<i32>(x, y), 0).r;
-  var out : f32 = 0.0;
-  if (cur > 0.5) {
-    if (count == 2 || count == 3) { out = 1.0; }
-  } else {
-    if (count == 3) { out = 1.0; }
-  }
-  textureStore(outputTex, vec2<i32>(x, y), vec4<f32>(out, out, out, 1.0));
-}
-`;
+        async function initWebGPU() {
+            if (!navigator.gpu) {
+                showError('WebGPUはこのブラウザでサポートされていません。Chrome/Edge 113+を使用してください。');
+                return false;
+            }
 
-  const vertWGSL = `
-@vertex
-fn vs_main(@builtin(vertex_index) vi : u32) -> @builtin(position) vec4<f32> {
-  // full-screen triangle
-  var pos = array<vec2<f32>, 3>(
-    vec2<f32>(-1.0, -1.0),
-    vec2<f32>(3.0, -1.0),
-    vec2<f32>(-1.0, 3.0)
-  );
-  return vec4<f32>(pos[vi], 0.0, 1.0);
-}
-`;
+            try {
+                const adapter = await navigator.gpu.requestAdapter();
+                if (!adapter) {
+                    showError('GPUアダプターの取得に失敗しました。');
+                    return false;
+                }
 
-  const fragWGSL = `
-@group(0) @binding(0) var mySampler : sampler;
-@group(0) @binding(1) var myTexture : texture_2d<f32>;
+                device = await adapter.requestDevice();
+                context = canvas.getContext('webgpu');
+                
+                const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
+                context.configure({
+                    device: device,
+                    format: canvasFormat,
+                    alphaMode: 'opaque'
+                });
 
-@fragment
-fn fs_main(@builtin(position) fragCoord : vec4<f32>) -> @location(0) vec4<f32> {
-  // fragCoord.xy is in pixels of render target; convert to uv
-  let dims = vec2<f32>(textureDimensions(myTexture, 0));
-  let uv = fragCoord.xy / dims;
-  let col = textureSampleLevel(myTexture, mySampler, uv, 0.0);
-  return vec4<f32>(col.rgb, 1.0);
-}
-`;
+                // コンピュートシェーダー（Life Gameロジック）
+                const computeShaderCode = `
+                    @group(0) @binding(0) var<storage, read> cellStateIn: array<u32>;
+                    @group(0) @binding(1) var<storage, read_write> cellStateOut: array<u32>;
+                    @group(0) @binding(2) var textureOut: texture_storage_2d<r32uint, write>;
+                    
+                    fn cellIndex(x: i32, y: i32) -> u32 {
+                        let gridSize = ${GRID_SIZE};
+                        let safeX = (x + gridSize) % gridSize;
+                        let safeY = (y + gridSize) % gridSize;
+                        return u32(safeY * gridSize + safeX);
+                    }
+                    
+                    fn cellActive(x: i32, y: i32) -> u32 {
+                        return cellStateIn[cellIndex(x, y)];
+                    }
+                    
+                    @compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
+                    fn computeMain(@builtin(global_invocation_id) cell: vec3u) {
+                        let x = i32(cell.x);
+                        let y = i32(cell.y);
+                        
+                        if (x >= ${GRID_SIZE} || y >= ${GRID_SIZE}) {
+                            return;
+                        }
+                        
+                        // 周囲8セルの生存数をカウント
+                        let activeNeighbors = 
+                            cellActive(x + 1, y + 1) +
+                            cellActive(x + 1, y) +
+                            cellActive(x + 1, y - 1) +
+                            cellActive(x, y - 1) +
+                            cellActive(x - 1, y - 1) +
+                            cellActive(x - 1, y) +
+                            cellActive(x - 1, y + 1) +
+                            cellActive(x, y + 1);
+                        
+                        let i = cellIndex(x, y);
+                        let isAlive = cellStateIn[i];
+                        
+                        // Conway's Game of Lifeのルール
+                        var newState: u32;
+                        if (activeNeighbors == 3u) {
+                            newState = 1u;
+                        } else if (activeNeighbors == 2u) {
+                            newState = isAlive;
+                        } else {
+                            newState = 0u;
+                        }
+                        
+                        cellStateOut[i] = newState;
+                        
+                        // テクスチャに直接書き込み（レンダリング用）
+                        textureStorageStore(textureOut, vec2i(x, y), vec4u(newState * 255u, 0u, 0u, 0u));
+                    }
+                `;
 
-  // GPU pipelines
-  const computeModule = device.createShaderModule({code: computeShaderWGSL});
-  const computePipeline = device.createComputePipeline({
-    layout: 'auto',
-    compute: { module: computeModule, entryPoint: 'main' }
-  });
+                // レンダーシェーダー（テクスチャを画面に描画）
+                const renderShaderCode = `
+                    struct VertexOutput {
+                        @builtin(position) position: vec4f,
+                        @location(0) texCoord: vec2f,
+                    }
+                    
+                    @vertex
+                    fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+                        var pos = array<vec2f, 6>(
+                            vec2f(-1.0, -1.0),
+                            vec2f(1.0, -1.0),
+                            vec2f(-1.0, 1.0),
+                            vec2f(-1.0, 1.0),
+                            vec2f(1.0, -1.0),
+                            vec2f(1.0, 1.0)
+                        );
+                        
+                        var texCoord = array<vec2f, 6>(
+                            vec2f(0.0, 1.0),
+                            vec2f(1.0, 1.0),
+                            vec2f(0.0, 0.0),
+                            vec2f(0.0, 0.0),
+                            vec2f(1.0, 1.0),
+                            vec2f(1.0, 0.0)
+                        );
+                        
+                        var output: VertexOutput;
+                        output.position = vec4f(pos[vertexIndex], 0.0, 1.0);
+                        output.texCoord = texCoord[vertexIndex];
+                        return output;
+                    }
+                    
+                    @group(0) @binding(0) var cellTexture: texture_2d<u32>;
+                    @group(0) @binding(1) var cellSampler: sampler;
+                    
+                    @fragment
+                    fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+                        let cellValue = textureLoad(cellTexture, vec2i(input.texCoord * vec2f(${GRID_SIZE}.0)), 0).r;
+                        
+                        if (cellValue > 0u) {
+                            return vec4f(0.3, 0.9, 1.0, 1.0); // 生存セル：シアン
+                        } else {
+                            return vec4f(0.05, 0.05, 0.1, 1.0); // 死亡セル：暗い青
+                        }
+                    }
+                `;
 
-  const renderModule = device.createShaderModule({code: vertWGSL + '\n' + fragWGSL});
-  const renderPipeline = device.createRenderPipeline({
-    layout: 'auto',
-    vertex: { module: device.createShaderModule({code: vertWGSL}), entryPoint: 'vs_main' },
-    fragment: { module: device.createShaderModule({code: fragWGSL}), entryPoint: 'fs_main', targets: [{format: navigator.gpu.getPreferredCanvasFormat()}] },
-    primitive: { topology: 'triangle-list' }
-  });
+                const computeShaderModule = device.createShaderModule({ code: computeShaderCode });
+                const renderShaderModule = device.createShaderModule({ code: renderShaderCode });
 
-  // state
-  let texA, texB; // ping-pong textures
-  let bindGroupA, bindGroupB; // A: input=texA, output=texB ; B: input=texB, output=texA
-  let paramsBuffer;
-  let sampler;
-  let canvasFormat = navigator.gpu.getPreferredCanvasFormat();
+                // ストレージバッファ（計算用）
+                const storageSize = GRID_SIZE * GRID_SIZE * 4;
+                cellStateStorages = [
+                    device.createBuffer({
+                        size: storageSize,
+                        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+                    }),
+                    device.createBuffer({
+                        size: storageSize,
+                        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+                    })
+                ];
 
-  let grid = null; // Uint8Array RGBA
-  let running = false;
-  let interval = parseInt(speedRange.value,10);
-  let lastStepTime = 0;
+                // テクスチャ（描画用）
+                cellStateTextures = [
+                    device.createTexture({
+                        size: [GRID_SIZE, GRID_SIZE],
+                        format: 'r32uint',
+                        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
+                    }),
+                    device.createTexture({
+                        size: [GRID_SIZE, GRID_SIZE],
+                        format: 'r32uint',
+                        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
+                    })
+                ];
 
-  function resizeCanvasForGrid(){
-    canvas.width = gridWidth;
-    canvas.height = gridHeight;
-    canvas.style.width = (Math.min(900, gridWidth)) + 'px';
-    canvas.style.height = Math.round(gridHeight * (parseInt(canvas.style.width)/gridWidth)) + 'px';
-    // configure canvas context
-    const ctx = canvas.getContext('webgpu');
-    ctx.configure({ device, format: canvasFormat, alphaMode: 'opaque' });
-  }
+                // サンプラー
+                const sampler = device.createSampler({
+                    magFilter: 'nearest',
+                    minFilter: 'nearest'
+                });
 
-  function makeEmptyGrid(){
-    grid = new Uint8Array(gridWidth * gridHeight * 4);
-    // all zeros (dead)
-  }
+                // コンピュートパイプライン
+                const computeBindGroupLayout = device.createBindGroupLayout({
+                    entries: [
+                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                        { binding: 2, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'r32uint' } }
+                    ]
+                });
 
-  function randomizeGrid(){
-    for (let y=0;y<gridHeight;y++){
-      for (let x=0;x<gridWidth;x++){
-        const v = (Math.random() < 0.15) ? 255 : 0;
-        const idx = (y*gridWidth + x)*4;
-        grid[idx] = v; grid[idx+1]=v; grid[idx+2]=v; grid[idx+3]=255;
-      }
-    }
-  }
+                computePipeline = device.createComputePipeline({
+                    layout: device.createPipelineLayout({ bindGroupLayouts: [computeBindGroupLayout] }),
+                    compute: { module: computeShaderModule, entryPoint: 'computeMain' }
+                });
 
-  function uploadGridToTexture(tex){
-    queue.writeTexture(
-      { texture: tex },
-      grid,
-      { bytesPerRow: gridWidth * 4 },
-      { width: gridWidth, height: gridHeight, depthOrArrayLayers: 1 }
-    );
-  }
+                // レンダーパイプライン
+                const renderBindGroupLayout = device.createBindGroupLayout({
+                    entries: [
+                        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'uint' } },
+                        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+                    ]
+                });
 
-  function createTexturesAndBindGroups(){
-    // destroy previous textures? LET GC handle it.
-    texA = device.createTexture({ size: [gridWidth, gridHeight], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT });
-    texB = device.createTexture({ size: [gridWidth, gridHeight], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT });
+                renderPipeline = device.createRenderPipeline({
+                    layout: device.createPipelineLayout({ bindGroupLayouts: [renderBindGroupLayout] }),
+                    vertex: { module: renderShaderModule, entryPoint: 'vertexMain' },
+                    fragment: {
+                        module: renderShaderModule,
+                        entryPoint: 'fragmentMain',
+                        targets: [{ format: canvasFormat }]
+                    }
+                });
 
-    // sampler for render
-    sampler = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest' });
+                // バインドグループ
+                bindGroups = {
+                    compute: [
+                        device.createBindGroup({
+                            layout: computeBindGroupLayout,
+                            entries: [
+                                { binding: 0, resource: { buffer: cellStateStorages[0] } },
+                                { binding: 1, resource: { buffer: cellStateStorages[1] } },
+                                { binding: 2, resource: cellStateTextures[1].createView() }
+                            ]
+                        }),
+                        device.createBindGroup({
+                            layout: computeBindGroupLayout,
+                            entries: [
+                                { binding: 0, resource: { buffer: cellStateStorages[1] } },
+                                { binding: 1, resource: { buffer: cellStateStorages[0] } },
+                                { binding: 2, resource: cellStateTextures[0].createView() }
+                            ]
+                        })
+                    ],
+                    render: [
+                        device.createBindGroup({
+                            layout: renderBindGroupLayout,
+                            entries: [
+                                { binding: 0, resource: cellStateTextures[1].createView() },
+                                { binding: 1, resource: sampler }
+                            ]
+                        }),
+                        device.createBindGroup({
+                            layout: renderBindGroupLayout,
+                            entries: [
+                                { binding: 0, resource: cellStateTextures[0].createView() },
+                                { binding: 1, resource: sampler }
+                            ]
+                        })
+                    ]
+                };
 
-    // params uniform
-    const paramArray = new Uint32Array([gridWidth, gridHeight]);
-    paramsBuffer = device.createBuffer({ size: 8, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    device.queue.writeBuffer(paramsBuffer, 0, paramArray.buffer, paramArray.byteOffset, paramArray.byteLength);
+                document.getElementById('gridSize').textContent = 
+                    `${GRID_SIZE} × ${GRID_SIZE} (${(GRID_SIZE * GRID_SIZE).toLocaleString()} セル)`;
+                document.getElementById('status').textContent = '準備完了';
 
-    // bind groups
-    bindGroupA = device.createBindGroup({ layout: computePipeline.getBindGroupLayout(0), entries: [
-      { binding: 0, resource: texA.createView() },
-      { binding: 1, resource: texB.createView() },
-      { binding: 2, resource: { buffer: paramsBuffer } }
-    ]});
+                return true;
+            } catch (error) {
+                showError('WebGPUの初期化に失敗しました: ' + error.message);
+                return false;
+            }
+        }
 
-    bindGroupB = device.createBindGroup({ layout: computePipeline.getBindGroupLayout(0), entries: [
-      { binding: 0, resource: texB.createView() },
-      { binding: 1, resource: texA.createView() },
-      { binding: 2, resource: { buffer: paramsBuffer } }
-    ]});
+        function randomizeGrid() {
+            const cellStateArray = new Uint32Array(GRID_SIZE * GRID_SIZE);
+            for (let i = 0; i < cellStateArray.length; i++) {
+                cellStateArray[i] = Math.random() > 0.7 ? 1 : 0;
+            }
+            device.queue.writeBuffer(cellStateStorages[0], 0, cellStateArray);
+            generation = 0;
+            render();
+        }
 
-    // render bind group (for fragment) - layout 0 used by render's group 0
-    // create a separate layout by fetching it from renderPipeline
-    const renderBindGroupLayout = renderPipeline.getBindGroupLayout(0);
-    renderBindGroup = device.createBindGroup({ layout: renderBindGroupLayout, entries: [
-      { binding: 0, resource: sampler },
-      { binding: 1, resource: texA.createView() }
-    ]});
-  }
+        function clearGrid() {
+            const cellStateArray = new Uint32Array(GRID_SIZE * GRID_SIZE);
+            device.queue.writeBuffer(cellStateStorages[0], 0, cellStateArray);
+            generation = 0;
+            render();
+        }
 
-  // initial setup
-  makeEmptyGrid();
-  randomizeGrid();
-  resizeCanvasForGrid();
-  createTexturesAndBindGroups();
-  uploadGridToTexture(texA);
+        function addGlider() {
+            const cellStateArray = new Uint32Array(GRID_SIZE * GRID_SIZE);
+            const startX = Math.floor(GRID_SIZE / 2);
+            const startY = Math.floor(GRID_SIZE / 2);
+            const glider = [
+                [0, 1, 0],
+                [0, 0, 1],
+                [1, 1, 1]
+            ];
 
-  // handle resize / apply size
-  applySize.addEventListener('click', ()=>{
-    gridWidth = Math.max(8, Math.min(2048, parseInt(widthInput.value,10) || 128));
-    gridHeight = Math.max(8, Math.min(2048, parseInt(heightInput.value,10) || 128));
-    makeEmptyGrid();
-    randomizeGrid();
-    resizeCanvasForGrid();
-    createTexturesAndBindGroups();
-    uploadGridToTexture(texA);
-    status.textContent = 'size applied';
-  });
+            for (let y = 0; y < 3; y++) {
+                for (let x = 0; x < 3; x++) {
+                    const idx = (startY + y) * GRID_SIZE + (startX + x);
+                    cellStateArray[idx] = glider[y][x];
+                }
+            }
 
-  // mouse toggling
-  let isDown = false;
-  canvas.addEventListener('pointerdown', (e)=>{
-    isDown = true; toggleAt(e);
-  });
-  window.addEventListener('pointerup', ()=>{ isDown = false; });
-  canvas.addEventListener('pointermove', (e)=>{ if(isDown) toggleAt(e); });
+            device.queue.writeBuffer(cellStateStorages[generation % 2], 0, cellStateArray);
+            render();
+        }
 
-  function toggleAt(e){
-    const rect = canvas.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const gx = Math.floor(cx * scaleX);
-    const gy = Math.floor(cy * scaleY);
-    if(gx < 0 || gx >= gridWidth || gy < 0 || gy >= gridHeight) return;
-    const idx = (gy*gridWidth + gx)*4;
-    const cur = grid[idx] > 0 ? 0 : 255;
-    grid[idx] = grid[idx+1] = grid[idx+2] = cur;
-    grid[idx+3] = 255;
-    // upload single pixel
-    const pixel = new Uint8Array([grid[idx], grid[idx+1], grid[idx+2], 255]);
-    device.queue.writeTexture({ texture: texA, origin: {x: gx, y: gy, z: 0} }, pixel, {bytesPerRow: 4}, {width:1,height:1,depthOrArrayLayers:1});
-  }
+        function computeStep() {
+            const encoder = device.createCommandEncoder();
+            const pass = encoder.beginComputePass();
+            
+            pass.setPipeline(computePipeline);
+            pass.setBindGroup(0, bindGroups.compute[generation % 2]);
+            
+            const workgroupCount = Math.ceil(GRID_SIZE / WORKGROUP_SIZE);
+            pass.dispatchWorkgroups(workgroupCount, workgroupCount);
+            
+            pass.end();
+            device.queue.submit([encoder.finish()]);
+            
+            generation++;
+            document.getElementById('generation').textContent = generation.toLocaleString();
+        }
 
-  // controls
-  startBtn.addEventListener('click', ()=>{ running = !running; startBtn.textContent = running ? 'Stop' : 'Start'; });
-  randomBtn.addEventListener('click', ()=>{ randomizeGrid(); uploadGridToTexture(texA); status.textContent = 'randomized'; });
-  clearBtn.addEventListener('click', ()=>{ makeEmptyGrid(); uploadGridToTexture(texA); status.textContent = 'cleared'; });
-  stepBtn.addEventListener('click', async ()=>{ await stepOnce(); render(); status.textContent = 'one step'; });
-  speedRange.addEventListener('input', ()=>{ interval = parseInt(speedRange.value,10); status.textContent = `speed ${interval}ms`; });
+        function render() {
+            const encoder = device.createCommandEncoder();
+            const pass = encoder.beginRenderPass({
+                colorAttachments: [{
+                    view: context.getCurrentTexture().createView(),
+                    loadOp: 'clear',
+                    clearValue: { r: 0.05, g: 0.05, b: 0.1, a: 1.0 },
+                    storeOp: 'store'
+                }]
+            });
 
-  // ping-pong flag
-  let ping = true;
+            pass.setPipeline(renderPipeline);
+            pass.setBindGroup(0, bindGroups.render[generation % 2]);
+            pass.draw(6);
+            pass.end();
 
-  async function stepOnce(){
-    // compute pass: read from texA (or texB) and write to texB (or texA)
-    const commandEncoder = device.createCommandEncoder();
-    const pass = commandEncoder.beginComputePass();
-    pass.setPipeline(computePipeline);
-    if (ping) {
-      pass.setBindGroup(0, bindGroupA);
-    } else {
-      pass.setBindGroup(0, bindGroupB);
-    }
-    const workgroupX = Math.ceil(gridWidth / 16);
-    const workgroupY = Math.ceil(gridHeight / 16);
-    pass.dispatchWorkgroups(workgroupX, workgroupY);
-    pass.end();
-    device.queue.submit([commandEncoder.finish()]);
-    // swap
-    ping = !ping;
-    // update render bind group to sample the newly produced texture (texB if ping false)
-    const viewForRender = ping ? texA.createView() : texB.createView();
-    renderBindGroup = device.createBindGroup({ layout: renderPipeline.getBindGroupLayout(0), entries: [ {binding:0, resource: sampler}, {binding:1, resource: viewForRender} ] });
-    // copy latest texture into texA/storage for user edits: we keep ping semantics where texA is input for interactions
-    // We will not copy back automatically to avoid overhead; instead we keep user edits in texA and reupload when needed.
-  }
+            device.queue.submit([encoder.finish()]);
+        }
 
-  function render(){
-    const ctx = canvas.getContext('webgpu');
-    const commandEncoder = device.createCommandEncoder();
-    const textureView = ctx.getCurrentTexture().createView();
-    const rpass = commandEncoder.beginRenderPass({ colorAttachments: [{ view: textureView, clearValue: {r:0, g:0, b:0, a:1}, loadOp: 'clear', storeOp: 'store' }] });
-    rpass.setPipeline(renderPipeline);
-    rpass.setBindGroup(0, renderBindGroup);
-    rpass.draw(3,1,0,0);
-    rpass.end();
-    device.queue.submit([commandEncoder.finish()]);
-  }
+        function animate(currentTime) {
+            if (!isRunning) return;
 
-  // main loop
-  function frame(t){
-    if (running && t - lastStepTime >= interval){
-      lastStepTime = t;
-      stepOnce().then(()=>render());
-    } else {
-      render();
-    }
-    requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
+            if (currentTime - lastFrameTime >= targetFrameTime) {
+                computeStep();
+                render();
+                
+                frameCount++;
+                if (currentTime - lastFpsUpdate >= 1000) {
+                    const fps = frameCount / ((currentTime - lastFpsUpdate) / 1000);
+                    document.getElementById('fps').textContent = fps.toFixed(1);
+                    frameCount = 0;
+                    lastFpsUpdate = currentTime;
+                }
+                
+                lastFrameTime = currentTime;
+            }
 
-})();
-</script>
+            animationId = requestAnimationFrame(animate);
+        }
+
+        startBtn.addEventListener('click', () => {
+            isRunning = true;
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            document.getElementById('status').textContent = '実行中';
+            lastFrameTime = performance.now();
+            lastFpsUpdate = performance.now();
+            frameCount = 0;
+            animate(performance.now());
+        });
+
+        stopBtn.addEventListener('click', () => {
+            isRunning = false;
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            document.getElementById('status').textContent = '停止';
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+        });
+
+        stepBtn.addEventListener('click', () => {
+            computeStep();
+            render();
+        });
+
+        resetBtn.addEventListener('click', randomizeGrid);
+        clearBtn.addEventListener('click', clearGrid);
+        gliderBtn.addEventListener('click', addGlider);
+
+        // 初期化
+        initWebGPU().then(success => {
+            if (success) {
+                randomizeGrid();
+            }
+        });
+    </script>
 </body>
 </html>
